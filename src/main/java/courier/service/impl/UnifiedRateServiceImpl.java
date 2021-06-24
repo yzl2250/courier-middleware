@@ -5,7 +5,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.codec.binary.StringUtils;
+import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.springframework.stereotype.Service;
 
@@ -13,10 +13,10 @@ import com.google.common.base.Strings;
 import com.google.gson.Gson;
 
 import courier.HttpClientConnection;
-import courier.constants.CourierNameConst;
-import courier.constants.GoodsTypeConst;
+import courier.constants.CourierConst;
 import courier.model.request.Request;
 import courier.model.response.CityLinkExpressResponse;
+import courier.model.response.DhlResponse;
 import courier.model.response.JtExpressResponse;
 import courier.model.response.UnifiedRateData;
 import courier.model.response.UnifiedRateResponse;
@@ -36,6 +36,7 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 		
 		addJtExpressRate(request, unifiedDateResponse, new ArrayList<>());
 		addCityLinkExpressRate(request, unifiedDateResponse, new ArrayList<>());
+		addDhlRate(request, unifiedDateResponse, new ArrayList<>());
 
 		return unifiedDateResponse;
 	}
@@ -49,17 +50,17 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 			JtExpressResponse jtExpressResponse = getJtExpressRate(request, errorMsgList);
 			if (jtExpressResponse == null) unifiedRateData.setError(errorMsgList.get(errorMsgList.size()-1));
 			else {
-				if (request.getGoodsType().equalsIgnoreCase(GoodsTypeConst.DOCUMENT)) {
+				if (request.getGoodsType().equalsIgnoreCase(CourierConst.GOODS_TYPE_DOCUMENT)) {
 					unifiedRateData.setDocumentRate(new BigDecimal(jtExpressResponse.getDocument()));
 					unifiedRateData.setTotalDocumentRate(new BigDecimal(jtExpressResponse.getTotalDocument()));					
 					unifiedRateData.setInsuranceCharge(!Strings.isNullOrEmpty(jtExpressResponse.getInsuranceCharge()) ? (new BigDecimal(jtExpressResponse.getInsuranceCharge())) : null); 
 				}
-				else if (request.getGoodsType().equalsIgnoreCase(GoodsTypeConst.PARCEL)) {
+				else if (request.getGoodsType().equalsIgnoreCase(CourierConst.GOODS_TYPE_PARCEL)) {
 					unifiedRateData.setParcelRate(new BigDecimal(jtExpressResponse.getParcel()));
 					unifiedRateData.setTotalParcelRate(new BigDecimal(jtExpressResponse.getTotalParcel()));
 					unifiedRateData.setInsuranceCharge(!Strings.isNullOrEmpty(jtExpressResponse.getInsuranceCharge()) ? (new BigDecimal(jtExpressResponse.getInsuranceCharge())) : null);
 				}
-				else if (request.getGoodsType().equalsIgnoreCase(GoodsTypeConst.ALL)) {
+				else if (request.getGoodsType().equalsIgnoreCase(CourierConst.GOODS_TYPE_ALL)) {
 					unifiedRateData.setDocumentRate(new BigDecimal(jtExpressResponse.getDocument()));
 					unifiedRateData.setTotalDocumentRate(new BigDecimal(jtExpressResponse.getTotalDocument()));
 					unifiedRateData.setParcelRate(new BigDecimal(jtExpressResponse.getParcel()));
@@ -68,7 +69,7 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 				}						
 			}
 		}
-		unifiedRateData.setCourier(CourierNameConst.JT_EXPRESS);
+		unifiedRateData.setCourier(CourierConst.COURIER_JT_EXPRESS);
 		unifiedDateResponse.getUnifiedRateDataList().add(unifiedRateData);
 	}
 	
@@ -175,7 +176,7 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 				unifiedRateData.setRate(cityLinkExpressResponse.getCityLinkReq().getCityLinkData().getRate());
 			}
 		}
-		unifiedRateData.setCourier(CourierNameConst.CITYLINK_EXPRESS);
+		unifiedRateData.setCourier(CourierConst.COURIER_CITYLINK_EXPRESS);
 		unifiedDateResponse.getUnifiedRateDataList().add(unifiedRateData);
 	}
 	
@@ -219,10 +220,10 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
         builder.addTextBody("length", request.getLength().toString());
         builder.addTextBody("width", request.getWidth().toString());
         builder.addTextBody("height", request.getHeight().toString());        
-        if (request.getGoodsType().equalsIgnoreCase(GoodsTypeConst.PARCEL)) {
+        if (request.getGoodsType().equalsIgnoreCase(CourierConst.GOODS_TYPE_PARCEL)) {
         	builder.addTextBody("selected_type", "1");  // type 1 = parcel, type 2 = document
         	builder.addTextBody("parcel_weight", request.getWeight().toString());
-        } else if (request.getGoodsType().equalsIgnoreCase(GoodsTypeConst.DOCUMENT)) {
+        } else if (request.getGoodsType().equalsIgnoreCase(CourierConst.GOODS_TYPE_DOCUMENT)) {
         	builder.addTextBody("selected_type", "2");  // type 1 = parcel, type 2 = document
         	builder.addTextBody("document_weight", request.getWeight().toString());
         }
@@ -241,7 +242,100 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 //		BigDecimal totalRate = afterSurchargeRate.multiply(BigDecimal.valueOf(1.06)).setScale(2, RoundingMode.HALF_UP); // 6% service tax
 //		
 //		cityLinkExpressResponse.getCityLinkReq().getCityLinkData().setRate(totalRate);
-//	}
+//	}	
+	
+	public void addDhlRate(Request request, UnifiedRateResponse unifiedDateResponse, List<String> errorMsgList) {
+		UnifiedRateData unifiedRateData = new UnifiedRateData();
+		Boolean isSuccess = dhlDataValidation(request, errorMsgList);
+		if (!isSuccess) unifiedRateData.setError(errorMsgList.get(errorMsgList.size()-1)); 
+		else {
+			DhlResponse dhlResponse = getDhlRate(request, errorMsgList);
+			if (dhlResponse == null) unifiedRateData.setError(errorMsgList.get(errorMsgList.size()-1));
+//			else if (!Strings.isNullOrEmpty(dhlResponse.getError())) unifiedRateData.setError(dhlResponse.getError());
+//			else if (cityLinkExpressResponse.getCityLinkReq().getStatus() == 200 
+//					&& !cityLinkExpressResponse.getCityLinkReq().getCityLinkData().getMessage().isEmpty()) 
+//				unifiedRateData.setError(cityLinkExpressResponse.getCityLinkReq().getCityLinkData().getMessage()); 
+			else {								
+				unifiedRateData.setRate(dhlResponse.getDhlOffers().get(0).getDhlPrice().getBillingAmountWithTax());
+			}
+		}
+		unifiedRateData.setCourier(CourierConst.COURIER_DHL);
+		unifiedDateResponse.getUnifiedRateDataList().add(unifiedRateData);
+	}
+	
+	public Boolean dhlDataValidation(Request request, List<String> errorMsgList) {
+		Boolean isSuccess = false;
+		
+		if (Strings.isNullOrEmpty(request.getOriginCountry())) errorMsgList.add("Origin Country cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getDestinationCountry())) errorMsgList.add("Destination Country cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getOriginCity())) errorMsgList.add("Origin City cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getDestinationCity())) errorMsgList.add("Destination City cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getFromPostalCode())) errorMsgList.add("From Postal Code cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getToPostalCode())) errorMsgList.add("To Postal Code cannot be empty");
+//		else if (Strings.isNullOrEmpty(request.getReceiverAddressType())) errorMsgList.add("Receiver Address Type cannot be empty, please fill in CONSUMER or BUSINESS");
+//		else if (Strings.isNullOrEmpty(request.getReceiverType())) errorMsgList.add("Receiver Type cannot be empty, please fill in CONSUMER or BUSINESS");
+//		else if (Strings.isNullOrEmpty(request.getToPostalCode())) errorMsgList.add("Sender Type cannot be empty, please fill in CONSUMER or BUSINESS");
+//		else if (Strings.isNullOrEmpty(request.getLanguage())) errorMsgList.add("Language cannot be empty, please fill in EN, CN, etc");
+//		else if (Strings.isNullOrEmpty(request.getMarketCountry())) errorMsgList.add("Market Country cannot be empty, please fill in country code i.g MY, SG, ID, etc");
+//		else if (Strings.isNullOrEmpty(request.isOptionDocuments())) errorMsgList.add("Please enter true/false to incidate document option");
+		else if (request.getOptionShippingDate() == null) errorMsgList.add("Shipping Date cannot be empty");
+		else if (request.getLength() == null) errorMsgList.add("Length cannot be empty");
+		else if (request.getWidth() == null) errorMsgList.add("Width cannot be empty");
+		else if (request.getHeight() == null) errorMsgList.add("Height cannot be empty");
+		else if (request.getWeight() == null) errorMsgList.add("Weight cannot be empty");
+		else if (request.getQuantity() == null) errorMsgList.add("Quantity cannot be empty");
+		else if (Strings.isNullOrEmpty(request.getGoodsType())) errorMsgList.add("Goods Type cannot be empty");
+		else if (!request.getGoodsType().equalsIgnoreCase("parcel") && !request.getGoodsType().equalsIgnoreCase("document")) errorMsgList.add("Goods type must be \"parcel\" or \"document\" only");
+		else {
+			BigDecimal dimensionWeight = (request.getWidth().multiply(request.getHeight()).multiply(request.getLength())).divide(new BigDecimal(5000), 2, RoundingMode.HALF_UP);
+			if (dimensionWeight.compareTo(request.getWeight()) == 1) request.setWeight(dimensionWeight);
+			isSuccess = true;					
+		}	
+		
+		return isSuccess;
+	}	
+	
+	public DhlResponse getDhlRate(Request request, List<String> errorMsgList) {
+		DhlResponse dhlResponse = null;	
+		
+		HttpClientConnection httpClientConnection = new HttpClientConnection();
+		String url = "https://cj-gaq.dhl.com/api/quote?";
+		
+		try {
+	    	URIBuilder builder = new URIBuilder(url);
+	    	builder.setParameter("destinationCountry", request.getDestinationCountry())
+	    	.setParameter("destinationCity", request.getDestinationCity())
+	    	.setParameter("destinationZip", request.getToPostalCode())
+	    	.setParameter("originCountry", request.getOriginCountry())
+	    	.setParameter("originCity", request.getOriginCity())
+	    	.setParameter("originZip", request.getFromPostalCode())
+//	    	.setParameter("receiverAddressType", request.getReceiverAddressType())
+//	    	.setParameter("receiverType", request.getReceiverAddressType())
+//	    	.setParameter("senderType", request.getSenderType())
+	    	.setParameter("items(0).weight", request.getWeight().toString())
+	    	.setParameter("items(0).height", request.getHeight().toString())
+	    	.setParameter("items(0).length", request.getLength().toString())
+	    	.setParameter("items(0).width", request.getWidth().toString())
+	    	.setParameter("items(0).quantity", request.getQuantity())
+//	    	.setParameter("language", request.getLanguage())
+//	    	.setParameter("marketCountry", request.getMarketCountry())
+//	    	.setParameter("abTestVersion", request.getAbTestVersion())
+//	    	.setParameter("marketCountry", request.getSelectedSegment())
+	    	.setParameter("option.DOCUMENTS", String.valueOf(request.isOptionDocuments()))
+	    	.setParameter("option.SHIPPING_DATE", request.getOptionShippingDate().toString());
+    	    
+		    String responseStr = httpClientConnection.sendGetWithParams(builder, errorMsgList);	    	    
+		    if (!responseStr.isEmpty()) {
+		    	dhlResponse = gson.fromJson(responseStr, DhlResponse.class);
+		    }	
+	    			
+		} catch (Exception ex) {
+			System.out.println(ex.getMessage());
+		}
+		
+		
+		return dhlResponse;
+	}
 	
 	
 }
