@@ -34,7 +34,7 @@ public class UnifiedRateServiceImpl implements UnifiedRateService {
 	public UnifiedRateResponse getUnifiedRate(Request request) {
 		UnifiedRateResponse unifiedDateResponse = new UnifiedRateResponse(new ArrayList<>());	
 		
-		addJtExpressRate(request, unifiedDateResponse, new ArrayList<>());
+//		addJtExpressRate(request, unifiedDateResponse, new ArrayList<>());     API changed, needs to update the code
 		addCityLinkExpressRate(request, unifiedDateResponse, new ArrayList<>());
 		addDhlRate(request, unifiedDateResponse, new ArrayList<>());
 
