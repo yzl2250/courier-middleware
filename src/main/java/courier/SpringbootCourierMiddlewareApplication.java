@@ -11,7 +11,7 @@ public class SpringbootCourierMiddlewareApplication {
 	
 	@GetMapping("/")
 	public String welcome() {
-		return "Welcome to courier middleware v2.0";
+		return "Welcome to courier middleware v2.01";
 	}
 
 	public static void main(String[] args) {
